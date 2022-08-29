@@ -30,6 +30,9 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with Prism.  If not, see <https://www.gnu.org/licenses/>.
 
+# Author: Elise Vidal
+# Contact :  evidal@artfx.fr
+
 
 try:
     from PySide2.QtCore import *
@@ -39,11 +42,7 @@ except:
     from PySide.QtCore import *
     from PySide.QtGui import *
 
-from distutils.file_util import write_file
-from tracemalloc import start
 from PrismUtils.Decorators import err_catcher_plugin as err_catcher
-import PrismUtils.PluginManager as PM
-import Prism_HoursTracker_Variables as prism_var
 from datetime import datetime, timedelta
 import json
 import os
@@ -69,9 +68,11 @@ class Prism_HoursTracker_Functions(object):
         self.core.callbacks.registerCallback(
             "onStateDeleted", self.onStateDeleted, plugin=self)
         self.core.callbacks.registerCallback(
-            "postPublish", self.postPublish, plugin=self)
+            "onStateCreated", self.onStateCreated, plugin=self)
         self.core.callbacks.registerCallback(
-            "postExport", self.postExport, plugin=self)
+            "onPublish", self.onPublish, plugin=self)
+        self.core.callbacks.registerCallback(
+            "postPublish", self.postPublish, plugin=self)
         self.core.callbacks.registerCallback(
             "onProductCreated", self.onProductCreated, plugin=self)
         self.core.callbacks.registerCallback(
@@ -82,6 +83,8 @@ class Prism_HoursTracker_Functions(object):
             "onDepartmentCreated", self.onDepartmentCreated, plugin=self)
         self.core.callbacks.registerCallback(
             "onTaskCreated", self.onTaskCreated, plugin=self)
+        self.core.callbacks.registerCallback(
+            "postExport", self.postExport, plugin=self)
 
 # Check if exists/create on disk data files
         self.user_data_dir = 'U:/mesDocuments/HoursTracker/'
@@ -113,12 +116,12 @@ class Prism_HoursTracker_Functions(object):
             dst = self.user_data_html
             shutil.copy(src, dst)
 
-        if not os.path.exists(self.user_data_html):
-            src = 'R:/Prism/Plugins/{version}/HoursTracker/Sccripts/templates/hours.html'.format(version=version)
+        if not os.path.exists(self.user_data_css):
+            src = 'R:/Prism/Plugins/{version}/HoursTracker/Scripts/templates/style.css'.format(version=version)
             dst = self.user_data_css
             shutil.copy(src, dst)
 
-        self.current_project = self.core.projectName
+        self.current_project = self.get_current_project()
         self.plugin_load()
 
     # if returns true, the plugin will be loaded by Prism
@@ -223,6 +226,9 @@ class Prism_HoursTracker_Functions(object):
         shutil.copy(src, dst)
 
     def initialise_data(self, data, date, start_time):
+        '''
+        Returns dict with user data. Initialises the data with a new day of hours tracked.
+        '''
         data['days'] = []
         day = self.initialise_day(date, start_time)
         data['days'].append(day)
@@ -231,6 +237,10 @@ class Prism_HoursTracker_Functions(object):
         return data
 
     def initialise_day(self, date, start_time):
+        '''
+        Returns a dict with the initial data of the current day.
+        Called when no previous data exists for the day.
+        '''
         day = self.get_template_data('day')
         day['date'] = date
         day['sessions'][-1]['project'] = self.get_current_project()
@@ -242,6 +252,10 @@ class Prism_HoursTracker_Functions(object):
         return day
 
     def initialise_session(self, start_time):
+        '''
+        Returns a dict of session data.
+        Sessions are group all work done on a project
+        '''
         session = self.get_template_data('session')
         session['project'] = self.get_current_project()
         session['project_sessions'][-1]['start_time'] = start_time
@@ -252,6 +266,10 @@ class Prism_HoursTracker_Functions(object):
         return session
 
     def initialise_project_session(self, start_time):
+        '''
+        Returns data for a project session.
+        A project session is work session on a project.
+        '''
         project_session = self.get_template_data('project_session')
         project_session['start_time'] = start_time
         project_session['last_action_time'] = start_time
@@ -261,6 +279,9 @@ class Prism_HoursTracker_Functions(object):
         return project_session
 
     def get_total_session_time(self, data):
+        '''
+        Returns a dict of user data, with the total time of each session added.
+        '''
         for session in data['days'][-1]['sessions']:
             total_time = timedelta(seconds=0)
             for project_session in session['project_sessions']:
@@ -290,7 +311,16 @@ class Prism_HoursTracker_Functions(object):
         '''
         Returns the project's name
         '''
-        return self.core.projectName
+        try:
+            project_path = self.core.getConfig("globals", "current project")
+            project_name = os.path.basename(os.path.dirname(os.path.dirname(project_path)))
+        except:
+            try:
+                project_name = os.environ("prism_project")
+            except:
+                project_name = self.core.projectName
+
+        return project_name
 
     def write_to_file(self, content, filename):
         '''
@@ -347,7 +377,7 @@ class Prism_HoursTracker_Functions(object):
     def log(self, error_message):
         date = datetime.now().strftime('%d/%m/%y')
         time = datetime.now().strftime('%H:%M:%S')
-        log_message = '/n' + date + ", " + time + " : " + error_message
+        log_message = '\n' + date + ", " + time + " : " + error_message
         with open(self.user_log, 'a') as logfile:
             logfile.write(log_message)
 
@@ -360,10 +390,13 @@ class Prism_HoursTracker_Functions(object):
             - Checks if project has changed, and creates new project_session if it has
         """
         try:
-            # Open user json data and laod it to data
-            with open(self.user_data_json, 'r') as json_file:
-                raw_data = json_file.read()
-                data = json.loads(raw_data)
+            try:
+                # Open user json data and laod it to data
+                with open(self.user_data_json, 'r') as json_file:
+                    raw_data = json_file.read()
+                    data = json.loads(raw_data)
+            except:
+                data = {}
 
             # Get today's date , a the time of the plugin load
             date = datetime.now().strftime('%d/%m/%y')
@@ -371,14 +404,8 @@ class Prism_HoursTracker_Functions(object):
 
             # If data is empty, create list of days and append a day template to it, add the current project as last active.
             # Then fill the day template data with relevant information
-            if data == {}:
+            if data == {} or '':
                 data = self.initialise_data(data, date, start_time)
-
-            # # Check if current day exists and create data if necessary
-            if date != data['days'][-1]['date']:
-                self.core.popup("Today's date is not currently in data, adding it now")
-                new_day = self.initialise_day(date, start_time)
-                data['days'].append(new_day)
 
             # Check if it's a new week, archive and reset data if it is
             if self.is_new_week(data) is True:
@@ -386,6 +413,11 @@ class Prism_HoursTracker_Functions(object):
                 data = {}
                 self.reset_user_data()
                 data = self.initialise_data(data, date, start_time)
+
+            # # Check if current day exists and create data if necessary
+            if date != data['days'][-1]['date']:
+                new_day = self.initialise_day(date, start_time)
+                data['days'].append(new_day)
 
             # If data is not empty check if the project has changed
             # If it has and more than one session already exists (more than 1 project has been worked on today), adds a project session
@@ -432,7 +464,6 @@ class Prism_HoursTracker_Functions(object):
 
             # Check if current day exists and create data if necessary
             if date != data['days'][-1]['date']:
-                self.core.popup("Today's date is not currently in data, adding it now")
                 new_day = self.initialise_day(date, start_time)
                 data['days'].append(new_day)
 
@@ -455,21 +486,17 @@ class Prism_HoursTracker_Functions(object):
             if current_session is not None:
                 last_session = current_session['project_sessions'][-1]
                 if 'last_action_time' in last_session:
-                    self.core.popup('Checking how long since last session activity')
                     time_since_last = self.get_time_delta(start_time, last_session['last_action_time'])
                     if time_since_last > timedelta(hours=2):
-                        self.core.popup('Time since last action is : ' + str(time_since_last))
                         new_session = self.initialise_project_session(start_time)
                         day['sessions'][-1]['project_sessions'].append(new_session)
                     else:
                         last_session['last_action_time'] = start_time
                         last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
                 else:
-                    self.core.popup('No last action, writing one now')
                     last_session['last_action_time'] = start_time
                     last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
             else:
-                self.core.popup('Current Project not currently in data, adding it now')
                 new_session = self.initialise_session(start_time)
                 day['sessions'].append(new_session)
 
@@ -489,6 +516,12 @@ class Prism_HoursTracker_Functions(object):
 
 
 # CALLBACKS
+    '''
+    To add new callbacks:
+    1. Register the callback in the init() function
+    2. Add a definition for the  callback function below, make sure it call self.update_data()
+    3. Check in the Prism source code if the callback accepts *args and/or **kwargs (to avoid Prism Errors that can't be caught)
+    '''
     def onSceneOpen(self, *args):
         self.update_data()
 
@@ -501,13 +534,16 @@ class Prism_HoursTracker_Functions(object):
     def onStateManagerClose(self, *args):
         self.update_data()
 
-    def onStateDeleted(self, *args, **kargs):
+    def onStateDeleted(self, *args):
         self.update_data()
 
-    def postPublish(self, *args):
+    def onStateCreated(self, *args, **kwargs):
         self.update_data()
 
-    def postExport(self, *args):
+    def onPublish(self, *args):
+        self.update_data()
+
+    def postPublish(self, *args, **kargs):
         self.update_data()
 
     def onProductCreated(self, *args):
@@ -523,4 +559,7 @@ class Prism_HoursTracker_Functions(object):
         self.update_data()
 
     def onTaskCreated(self, *args):
+        self.update_data()
+
+    def postExport(self, **kwargs):
         self.update_data()
