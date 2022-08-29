@@ -1,0 +1,37 @@
+table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+    border: 3px solid rgb(128, 0, 0);
+  }
+  
+  th, td {
+    padding: 10px;
+  }
+  html {
+    font-family: 'helvetica neue', helvetica, arial, sans-serif;
+  }
+  
+  th {
+    letter-spacing: 2px;
+  }
+  
+  td {
+    letter-spacing: 1px;
+    vertical-align: middle;
+    border: 3px solid rgb(128, 0, 0);
+  }
+  
+  tbody td {
+    text-align: center;
+    vertical-align: middle;
+  }
+  
+  tbody th {
+    text-align: center;
+  }
+  
+  th {
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.1), rgba(114, 2, 2, 0.5));
+    border: 3px solid rgb(128, 0, 0);
+  }
