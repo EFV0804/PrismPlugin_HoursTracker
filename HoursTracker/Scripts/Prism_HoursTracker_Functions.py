@@ -121,8 +121,9 @@ class Prism_HoursTracker_Functions(object):
             dst = self.user_data_css
             shutil.copy(src, dst)
 
-        self.current_project = self.get_current_project()
-        self.plugin_load()
+        if 'noUI' not in self.core.prismArgs:
+            self.current_project = self.get_current_project()
+            self.plugin_load()
 
     # if returns true, the plugin will be loaded by Prism
     @err_catcher(name=__name__)
@@ -381,6 +382,12 @@ class Prism_HoursTracker_Functions(object):
         with open(self.user_log, 'a') as logfile:
             logfile.write(log_message)
 
+    def get_username(self):
+        try:
+            return self.core.getConfig("globals", "username")
+        except:
+            return self.core.username
+
 # LOGIC
     def plugin_load(self):
         """
@@ -389,59 +396,60 @@ class Prism_HoursTracker_Functions(object):
             - Checks if json data is empty, and sets it if it is.
             - Checks if project has changed, and creates new project_session if it has
         """
-        try:
+        if 'noUI' not in self.core.prismArgs:
             try:
-                # Open user json data and laod it to data
-                with open(self.user_data_json, 'r') as json_file:
-                    raw_data = json_file.read()
-                    data = json.loads(raw_data)
-            except:
-                data = {}
+                try:
+                    # Open user json data and laod it to data
+                    with open(self.user_data_json, 'r') as json_file:
+                        raw_data = json_file.read()
+                        data = json.loads(raw_data)
+                except:
+                    data = {}
 
-            # Get today's date , a the time of the plugin load
-            date = datetime.now().strftime('%d/%m/%y')
-            start_time = datetime.now().strftime('%H:%M:%S')
+                # Get today's date , a the time of the plugin load
+                date = datetime.now().strftime('%d/%m/%y')
+                start_time = datetime.now().strftime('%H:%M:%S')
 
-            # If data is empty, create list of days and append a day template to it, add the current project as last active.
-            # Then fill the day template data with relevant information
-            if data == {} or '':
-                data = self.initialise_data(data, date, start_time)
+                # If data is empty, create list of days and append a day template to it, add the current project as last active.
+                # Then fill the day template data with relevant information
+                if data == {} or '':
+                    data = self.initialise_data(data, date, start_time)
 
-            # Check if it's a new week, archive and reset data if it is
-            if self.is_new_week(data) is True:
-                self.archive_data()
-                data = {}
-                self.reset_user_data()
-                data = self.initialise_data(data, date, start_time)
+                # Check if it's a new week, archive and reset data if it is
+                if self.is_new_week(data) is True:
+                    self.archive_data()
+                    data = {}
+                    self.reset_user_data()
+                    data = self.initialise_data(data, date, start_time)
 
-            # # Check if current day exists and create data if necessary
-            if date != data['days'][-1]['date']:
-                new_day = self.initialise_day(date, start_time)
-                data['days'].append(new_day)
+                # # Check if current day exists and create data if necessary
+                if date != data['days'][-1]['date']:
+                    new_day = self.initialise_day(date, start_time)
+                    data['days'].append(new_day)
 
-            # If data is not empty check if the project has changed
-            # If it has and more than one session already exists (more than 1 project has been worked on today), adds a project session
-            # for the current project
-            else:
-                if self.current_project != data['last_active_project']:
-                    data['last_active_project'] = self.current_project
-                    today_sessions = data['days'][-1]['sessions']
-                    if len(today_sessions) > 1:
-                        for session in today_sessions:
-                            if session['project'] == self.current_project:
-                                project_session = self.initialise_project_session(start_time)
-                                session['project_sessions'].append(project_session)
-                    else:
-                        project_session = self.initialise_project_session(start_time)
-                        today_sessions[-1]['project_sessions'].append(project_session)
+                # If data is not empty check if the project has changed
+                # If it has and more than one session already exists (more than 1 project has been worked on today), adds a project session
+                # for the current project
+                else:
+                    if self.current_project != data['last_active_project']:
+                        data['last_active_project'] = self.current_project
+                        today_sessions = data['days'][-1]['sessions']
+                        if len(today_sessions) > 1:
+                            for session in today_sessions:
+                                if session['project'] == self.current_project:
+                                    project_session = self.initialise_project_session(start_time)
+                                    session['project_sessions'].append(project_session)
+                        else:
+                            project_session = self.initialise_project_session(start_time)
+                            today_sessions[-1]['project_sessions'].append(project_session)
 
-            # Write the changes to the json file
-            json_obj = json.dumps(data)
-            content = "var data = '{}'".format(json_obj)
-            self.write_to_file(json_obj, self.user_data_json)
-            self.write_to_file(content, self.user_data_js)
-        except Exception as e:
-            self.log(traceback.format_exc())
+                # Write the changes to the json file
+                json_obj = json.dumps(data)
+                content = "var data = '{}'".format(json_obj)
+                self.write_to_file(json_obj, self.user_data_json)
+                self.write_to_file(content, self.user_data_js)
+            except Exception as e:
+                self.log(traceback.format_exc())
 
     def update_data(self):
         """
@@ -451,68 +459,69 @@ class Prism_HoursTracker_Functions(object):
         Runs a series of checks on existing data to determine where to write the action's data
         Writes the action's data
         """
-        try:
-            # Get scene open action relevant data
-            user = self.core.username
-            date = datetime.now().strftime('%d/%m/%y')
-            start_time = datetime.now().strftime('%H:%M:%S')
+        if 'noUI' not in self.core.prismArgs:
+            try:
+                # Get scene open action relevant data
+                user = self.get_username()
+                date = datetime.now().strftime('%d/%m/%y')
+                start_time = datetime.now().strftime('%H:%M:%S')
 
-            # Get data from file
-            with open(self.user_data_json, 'r') as json_file:
-                raw_data = json_file.read()
-                data = json.loads(raw_data)
+                # Get data from file
+                with open(self.user_data_json, 'r') as json_file:
+                    raw_data = json_file.read()
+                    data = json.loads(raw_data)
 
-            # Check if current day exists and create data if necessary
-            if date != data['days'][-1]['date']:
-                new_day = self.initialise_day(date, start_time)
-                data['days'].append(new_day)
+                # Check if current day exists and create data if necessary
+                if date != data['days'][-1]['date']:
+                    new_day = self.initialise_day(date, start_time)
+                    data['days'].append(new_day)
 
-            # Check if it's a new week, archive and reset data if it is
-            if self.is_new_week(data) is True:
-                self.archive_data()
-                data = {}
-                self.reset_user_data()
-                data = self.initialise_data(data, date, start_time)
+                # Check if it's a new week, archive and reset data if it is
+                if self.is_new_week(data) is True:
+                    self.archive_data()
+                    data = {}
+                    self.reset_user_data()
+                    data = self.initialise_data(data, date, start_time)
 
-            # Get last day
-            day = data['days'][-1]
+                # Get last day
+                day = data['days'][-1]
 
-            # Get current session
-            current_session = None
-            for session in day['sessions']:
-                if self.core.projectName == session['project']:
-                    current_session = session
-            # Set last action time
-            if current_session is not None:
-                last_session = current_session['project_sessions'][-1]
-                if 'last_action_time' in last_session:
-                    time_since_last = self.get_time_delta(start_time, last_session['last_action_time'])
-                    if time_since_last > timedelta(hours=2):
-                        new_session = self.initialise_project_session(start_time)
-                        day['sessions'][-1]['project_sessions'].append(new_session)
+                # Get current session
+                current_session = None
+                for session in day['sessions']:
+                    if self.core.projectName == session['project']:
+                        current_session = session
+                # Set last action time
+                if current_session is not None:
+                    last_session = current_session['project_sessions'][-1]
+                    if 'last_action_time' in last_session:
+                        time_since_last = self.get_time_delta(start_time, last_session['last_action_time'])
+                        if time_since_last > timedelta(hours=2):
+                            new_session = self.initialise_project_session(start_time)
+                            day['sessions'][-1]['project_sessions'].append(new_session)
+                        else:
+                            last_session['last_action_time'] = start_time
+                            last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
                     else:
                         last_session['last_action_time'] = start_time
                         last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
                 else:
-                    last_session['last_action_time'] = start_time
-                    last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
-            else:
-                new_session = self.initialise_session(start_time)
-                day['sessions'].append(new_session)
+                    new_session = self.initialise_session(start_time)
+                    day['sessions'].append(new_session)
 
-            # Set total time for all sessions
-            data = self.get_total_session_time(data)
+                # Set total time for all sessions
+                data = self.get_total_session_time(data)
 
-            # Set user id data
-            data['user_id'] = user
+                # Set user id data
+                data['user_id'] = user
 
-            # Write data to file
-            json_obj = json.dumps(data)
-            content = "var data = '{}'".format(json_obj)
-            self.write_to_file(json_obj, self.user_data_json)
-            self.write_to_file(content, self.user_data_js)
-        except Exception as e:
-            self.log(traceback.format_exc())
+                # Write data to file
+                json_obj = json.dumps(data)
+                content = "var data = '{}'".format(json_obj)
+                self.write_to_file(json_obj, self.user_data_json)
+                self.write_to_file(content, self.user_data_js)
+            except Exception as e:
+                self.log(traceback.format_exc())
 
 
 # CALLBACKS
