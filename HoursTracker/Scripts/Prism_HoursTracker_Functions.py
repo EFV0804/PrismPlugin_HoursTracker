@@ -213,7 +213,7 @@ class Prism_HoursTracker_Functions(object):
         else:
             False
 
-    def archive_data(self):
+    def backup_data(self):
         """
         Copies the user's json data to a backup location
         """
@@ -222,6 +222,13 @@ class Prism_HoursTracker_Functions(object):
         dst = self.user_data_backup + today + '_hours.json'
         shutil.copy(src, dst)
 
+        src = self.user_log
+        today = datetime.now().strftime('%d_%m_%y')
+        dst = self.user_data_backup + today + '_log.txt'
+        shutil.copy(src, dst)
+
+        self.write_to_file('', self.user_log)
+
     def initialise_data(self, data, date, start_time):
         '''
         Returns dict with user data. Initialises the data with a new day of hours tracked.
@@ -229,7 +236,7 @@ class Prism_HoursTracker_Functions(object):
         data['days'] = []
         day = self.initialise_day(date, start_time)
         data['days'].append(day)
-        data['last_active_project'] = self.current_project
+        data['last_active_project'] = self.get_current_project()
 
         return data
 
@@ -443,7 +450,7 @@ class Prism_HoursTracker_Functions(object):
 
                 # Check if it's a new week, archive and reset data if it is
                 elif self.is_new_week(data) is True:
-                    self.archive_data()
+                    self.backup_data()
                     data = {}
                     self.reset_user_data()
                     data = self.initialise_data(data, date, start_time)
