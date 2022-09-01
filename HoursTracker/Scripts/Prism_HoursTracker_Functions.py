@@ -121,10 +121,6 @@ class Prism_HoursTracker_Functions(object):
             dst = self.user_data_css
             shutil.copy(src, dst)
 
-        if 'noUI' not in self.core.prismArgs:
-            self.current_project = self.get_current_project()
-            self.plugin_load()
-
     # if returns true, the plugin will be loaded by Prism
     @err_catcher(name=__name__)
     def isActive(self):
@@ -276,7 +272,6 @@ class Prism_HoursTracker_Functions(object):
         project_session['last_action_time'] = start_time
         project_session['total_time'] = str(
             self.get_time_delta(start_time, start_time))
-
         return project_session
 
     def get_total_session_time(self, data):
@@ -313,13 +308,10 @@ class Prism_HoursTracker_Functions(object):
         Returns the project's name
         '''
         try:
+            project_name = self.core.projectName
+        except:
             project_path = self.core.getConfig("globals", "current project")
             project_name = os.path.basename(os.path.dirname(os.path.dirname(project_path)))
-        except:
-            try:
-                project_name = os.environ("prism_project")
-            except:
-                project_name = self.core.projectName
 
         return project_name
 
@@ -388,69 +380,38 @@ class Prism_HoursTracker_Functions(object):
         except:
             return self.core.username
 
+    def is_project_in_sessions(self, data, project):
+        found = False
+        for session in data['days'][-1]['sessions']:
+            if session['project'] == project:
+                found = True
+                break
+            else:
+                pass
+
+        return found
+
+    def is_last_active_project(self, data, project):
+        if project == data['last_active_project']:
+            return True
+        else:
+            return False
+
+    def get_last_project_session(self, data):
+        today = data['days'][-1]
+        for session in today['sessions']:
+            if session['project'] == self.get_current_project():
+                today_session = session
+        project_session = today_session['project_sessions'][-1]
+
+        return project_session
+
+    def get_current_session(self, data):
+        today = data['days'][-1]
+        for session in today['sessions']:
+            if session['project'] == self.get_current_project():
+                return session
 # LOGIC
-    def plugin_load(self):
-        """
-        Runs a series of checks json data when the plugin is loaded. Changes on json are written to file.
-            - Checks if it's a new week, and reset json data if it is.
-            - Checks if json data is empty, and sets it if it is.
-            - Checks if project has changed, and creates new project_session if it has
-        """
-        if 'noUI' not in self.core.prismArgs:
-            try:
-                try:
-                    # Open user json data and laod it to data
-                    with open(self.user_data_json, 'r') as json_file:
-                        raw_data = json_file.read()
-                        data = json.loads(raw_data)
-                except:
-                    data = {}
-
-                # Get today's date , a the time of the plugin load
-                date = datetime.now().strftime('%d/%m/%y')
-                start_time = datetime.now().strftime('%H:%M:%S')
-
-                # If data is empty, create list of days and append a day template to it, add the current project as last active.
-                # Then fill the day template data with relevant information
-                if data == {} or '':
-                    data = self.initialise_data(data, date, start_time)
-
-                # Check if it's a new week, archive and reset data if it is
-                if self.is_new_week(data) is True:
-                    self.archive_data()
-                    data = {}
-                    self.reset_user_data()
-                    data = self.initialise_data(data, date, start_time)
-
-                # # Check if current day exists and create data if necessary
-                if date != data['days'][-1]['date']:
-                    new_day = self.initialise_day(date, start_time)
-                    data['days'].append(new_day)
-
-                # If data is not empty check if the project has changed
-                # If it has and more than one session already exists (more than 1 project has been worked on today), adds a project session
-                # for the current project
-                else:
-                    if self.current_project != data['last_active_project']:
-                        data['last_active_project'] = self.current_project
-                        today_sessions = data['days'][-1]['sessions']
-                        if len(today_sessions) > 1:
-                            for session in today_sessions:
-                                if session['project'] == self.current_project:
-                                    project_session = self.initialise_project_session(start_time)
-                                    session['project_sessions'].append(project_session)
-                        else:
-                            project_session = self.initialise_project_session(start_time)
-                            today_sessions[-1]['project_sessions'].append(project_session)
-
-                # Write the changes to the json file
-                json_obj = json.dumps(data)
-                content = "var data = '{}'".format(json_obj)
-                self.write_to_file(json_obj, self.user_data_json)
-                self.write_to_file(content, self.user_data_js)
-            except Exception as e:
-                self.log(traceback.format_exc())
-
     def update_data(self):
         """
         Function that runs everytime a callback is called in Prism. The logic happens here.
@@ -467,47 +428,56 @@ class Prism_HoursTracker_Functions(object):
                 start_time = datetime.now().strftime('%H:%M:%S')
 
                 # Get data from file
-                with open(self.user_data_json, 'r') as json_file:
-                    raw_data = json_file.read()
-                    data = json.loads(raw_data)
+                try:
+                    # Open user json data and laod it to data
+                    with open(self.user_data_json, 'r') as json_file:
+                        raw_data = json_file.read()
+                        data = json.loads(raw_data)
+                except:
+                    # If json file empty return empty dict/json object
+                    data = {}
 
-                # Check if current day exists and create data if necessary
-                if date != data['days'][-1]['date']:
-                    new_day = self.initialise_day(date, start_time)
-                    data['days'].append(new_day)
+                # If data is empty initialise it
+                if data == {}:
+                    data = self.initialise_data(data, date, start_time)
 
                 # Check if it's a new week, archive and reset data if it is
-                if self.is_new_week(data) is True:
+                elif self.is_new_week(data) is True:
                     self.archive_data()
                     data = {}
                     self.reset_user_data()
                     data = self.initialise_data(data, date, start_time)
 
-                # Get last day
-                day = data['days'][-1]
+                # Check if current day exists and create data if necessary
+                elif date != data['days'][-1]['date']:
+                    new_day = self.initialise_day(date, start_time)
+                    data['days'].append(new_day)
+                    data['last_active_project'] = self.get_current_project()
 
-                # Get current session
-                current_session = None
-                for session in day['sessions']:
-                    if self.core.projectName == session['project']:
-                        current_session = session
-                # Set last action time
-                if current_session is not None:
-                    last_session = current_session['project_sessions'][-1]
-                    if 'last_action_time' in last_session:
-                        time_since_last = self.get_time_delta(start_time, last_session['last_action_time'])
-                        if time_since_last > timedelta(hours=2):
-                            new_session = self.initialise_project_session(start_time)
-                            day['sessions'][-1]['project_sessions'].append(new_session)
-                        else:
-                            last_session['last_action_time'] = start_time
-                            last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
-                    else:
-                        last_session['last_action_time'] = start_time
-                        last_session['total_time'] = str(self.get_time_delta(last_session['last_action_time'], last_session['start_time']))
+                # Does the current project have a session if not initialise it
+                elif self.is_project_in_sessions(data, self.get_current_project()) == False:
+                    session = self.initialise_session(start_time)
+                    data['days'][-1]['sessions'].append(session)
+                    data['last_active_project'] = self.get_current_project()
+
+                #  Is the current project the last active project, if not start new project session
+                elif self.is_last_active_project(data, self.get_current_project()) == False:
+                    project_session  = self.initialise_project_session(start_time)
+                    for session in data['days'][-1]['sessions']:
+                        if session['project'] == self.get_current_project():
+                            session['project_sessions'].append(project_session)
+
+                    data['last_active_project'] = self.get_current_project()
+                # If current project is last active project, update action time
                 else:
-                    new_session = self.initialise_session(start_time)
-                    day['sessions'].append(new_session)
+                    for index, session in enumerate(data['days'][-1]['sessions']):
+                        if session['project'] == self.get_current_project():
+                            data['days'][-1]['sessions'][index]['project_sessions'][-1]['last_action_time'] = start_time
+                            start = data['days'][-1]['sessions'][index]['project_sessions'][-1]['start_time']
+                            last = data['days'][-1]['sessions'][index]['project_sessions'][-1]['last_action_time']
+                            data['days'][-1]['sessions'][index]['project_sessions'][-1]['total_time'] = str(
+                                self.get_time_delta(last, start))
+
 
                 # Set total time for all sessions
                 data = self.get_total_session_time(data)
@@ -522,7 +492,6 @@ class Prism_HoursTracker_Functions(object):
                 self.write_to_file(content, self.user_data_js)
             except Exception as e:
                 self.log(traceback.format_exc())
-
 
 # CALLBACKS
     '''
