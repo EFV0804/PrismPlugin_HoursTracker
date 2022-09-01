@@ -10,5 +10,6 @@ A plugin for Prism pipeline to track hours spent working on different projects. 
   To install this plugin copy the  'HoursTracker' folder into your Prims plugin location, and restart Prism.
   
   Works for Prism v2.0.0.beta11.4
-## Credit and Contact
-  This plugin was developed at [MenhirFX](https://menhirfx.com/fr) by me
+
+## Credits
+- [MenhirFX](www.menhirfx.com)
